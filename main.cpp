@@ -263,120 +263,131 @@ private:
 
     void CalculateVerterbiMatchProbability(size_t r, size_t c) {
         double best_score = hmm_.GetTransitionMatrix().GetTransitionLogProbability(MATCH, MATCH) + v_match_[r-1][c-1];
+        STATE best_previous_state = MATCH;
 
         double insert_x_score = hmm_.GetTransitionMatrix().GetTransitionLogProbability(INSERT_X, MATCH) + v_x_[r-1][c-1];
         if (insert_x_score > best_score) {
             best_score = insert_x_score;
+            best_previous_state = INSERT_X;
         }
 
         double insert_y_score = hmm_.GetTransitionMatrix().GetTransitionLogProbability(INSERT_Y, MATCH) + v_y_[r-1][c-1];
         if (insert_y_score > best_score) {
             best_score = insert_y_score;
+            best_previous_state = INSERT_Y;
         }
 
         NUCLEOTIDE x_i = ConvertCharToNucleotide(hmm_.GetSeq1()[c-1]);
         NUCLEOTIDE y_j = ConvertCharToNucleotide(hmm_.GetSeq2()[r-1]);
         double v_match_prob = hmm_.GetEmissionMatrix().GetEmissionLogProbability(x_i, y_j);
         v_match_[r][c] = v_match_prob + best_score;
+        backtrack_match_[r][c] = best_previous_state;
     }
 
     void CalculateVerterbiInsertXProbability(size_t r, size_t c) {
         double best_score = hmm_.GetTransitionMatrix().GetTransitionLogProbability(MATCH, INSERT_X) + v_match_[r][c-1];
+        STATE best_previous_state = MATCH;
 
         double insert_x_score = hmm_.GetTransitionMatrix().GetTransitionLogProbability(INSERT_X, INSERT_X) + v_x_[r][c-1];
         if (insert_x_score > best_score) {
             best_score = insert_x_score;
+            best_previous_state = INSERT_X;
         }
 
         v_x_[r][c] = best_score + hmm_.GetGapEmissionLogProbability();
+        backtrack_x_[r][c] = best_previous_state;
     }
 
     void CalculateVerterbiInsertYProbability(size_t r, size_t c) {
         double best_score = hmm_.GetTransitionMatrix().GetTransitionLogProbability(MATCH, INSERT_Y) + v_match_[r-1][c];
+        STATE best_previous_state = MATCH;
 
         double insert_y_score = hmm_.GetTransitionMatrix().GetTransitionLogProbability(INSERT_Y, INSERT_Y) + v_y_[r-1][c];
         if (insert_y_score > best_score) {
             best_score = insert_y_score;
+            best_previous_state = INSERT_Y;
         }
 
         v_y_[r][c] = best_score + hmm_.GetGapEmissionLogProbability();
+        backtrack_y_[r][c] = best_previous_state;
     }
 
     void Backtrack() {
-        enum class Best {
-            V_MATCH, V_X, V_Y
+        enum class BestState : int {
+            V_MATCH = 0, V_X, V_Y
         };
 
-        Best best = Best::V_MATCH;
-        double best_prob = v_match_[0][num_cols_-1];
-        size_t best_row_index = 0;
-        // Scan last column for best path probability in all 3 matrices
-        for (int r = 0; r < num_rows_; ++r) {
-            double v_match_prob = v_match_[r][num_cols_-1];
-            double v_x_prob = v_x_[r][num_cols_-1];
-            double v_y_prob = v_y_[r][num_cols_-1];
+        BestState best_state = BestState::V_MATCH;
+        size_t best_row_index = num_rows_ - 1;
+        size_t best_col_index = num_cols_ -1;
 
-            if (v_match_prob > best_prob) {
-                best = Best::V_MATCH;
-                best_row_index = r;
-                best_prob = v_match_prob;
-            }
+        {
+            double best_prob = v_match_[best_row_index][best_col_index-1];
+            double v_x_prob = v_x_[best_row_index][num_cols_-1];
+            double v_y_prob = v_y_[best_row_index][num_cols_-1];
 
             if (v_x_prob > best_prob) {
-                best = Best::V_X;
-                best_row_index = r;
+                best_state = BestState::V_X;
                 best_prob = v_x_prob;
             }
 
             if (v_y_prob > best_prob) {
-                best = Best::V_Y;
-                best_row_index = r;
+                best_state = BestState::V_Y;
                 best_prob = v_y_prob;
             }
         }
 
         // Actually do the backtracking now
-        size_t best_col_index = num_cols_ - 1;
-
         std::stack<STATE> state_stack;
 
-        do {
+        while (!(best_col_index == 0 && best_row_index == 0)) {
             std::cout << "(" << best_row_index << ", " << best_col_index << ")" << std::endl;
 
-            switch(best) {
-                case Best::V_MATCH :
+            switch(best_state) {
+                case BestState::V_MATCH :
                     state_stack.push(MATCH);
                     break;
-                case Best::V_X :
+                case BestState::V_X :
                     state_stack.push(INSERT_X);
                     break;
-                case Best::V_Y :
+                case BestState::V_Y :
                     state_stack.push(INSERT_Y);
+                    break;
                 default:
                     throw std::logic_error("Unhandled state");
 
             }
 
-            best_row_index = (best == Best::V_MATCH || best == Best::V_Y) ? best_row_index - 1 : best_row_index;
-            best_col_index = (best == Best::V_MATCH || best == Best::V_X) ? best_col_index - 1 : best_col_index;
+            best_row_index = (best_state == BestState::V_MATCH || best_state == BestState::V_Y) ? best_row_index - 1 : best_row_index;
+            best_col_index = (best_state == BestState::V_MATCH || best_state == BestState::V_X) ? best_col_index - 1 : best_col_index;
+
+            if (best_row_index == 0 && best_col_index != 0) {
+                best_state = BestState::V_X;
+                continue;
+            }
+
+            if (best_col_index == 0 && best_row_index != 0) {
+                best_state = BestState::V_Y;
+                continue;
+            }
 
             double v_match_prob = v_match_[best_row_index][best_col_index];
             double v_x_prob = v_x_[best_row_index][best_col_index];
             double v_y_prob = v_y_[best_row_index][best_col_index];
 
-            best_prob = v_match_prob;
-            best = Best::V_MATCH;
+            double best_prob = v_match_prob;
+            best_state = BestState::V_MATCH;
 
             if (v_x_prob > best_prob) {
                 best_prob = v_x_prob;
-                best = Best::V_X;
+                best_state = BestState::V_X;
             }
 
             if (v_y_prob > best_prob) {
                 best_prob = v_y_prob;
-                best = Best::V_Y;
+                best_state = BestState::V_Y;
             }
-        } while (best_col_index != 0 && best_row_index != 0);
+        }
 
         // Print the path
         while (!state_stack.empty()) {
@@ -411,15 +422,23 @@ int main() {
         0.0, 0.0, 0.0, 0.0, 1.0
     );
 
-    PairHMM::EmissionMatrix emission_mat(
-        0.5, 0.15, 0.05, 0.3,
-        0.15, 0.5, 0.3, 0.05,
-        0.05, 0.3, 0.5, 0.15,
-        0.3, 0.05, 0.15, 0.5
-    );
+//    PairHMM::EmissionMatrix emission_mat(
+//        0.5, 0.15, 0.05, 0.3,
+//        0.15, 0.5, 0.3, 0.05,
+//        0.05, 0.3, 0.5, 0.15,
+//        0.3, 0.05, 0.15, 0.5
+//    );
 
-    std::string seq1 = "CAT";
-    std::string seq2 = "CAAT";
+    PairHMM::EmissionMatrix emission_mat(
+                                         1.0, 0.0, 0.0, 0.0,
+                                         0.0, 1.0, 0.0, 0.0,
+                                         0.0, 0.0, 1.0, 0.0,
+                                         0.0, 0.0, 0.0, 1.0
+                                         );
+
+
+    std::string seq1 = "CAAT";
+    std::string seq2 = "CAGT";
 
     PairHMM::PairHMM hmm(std::move(emission_mat), std::move(trans_mat), seq1, seq2);
 
