@@ -220,9 +220,9 @@ public:
         // Traverse column by column
         for (size_t c = 1; c < num_cols_; ++c) {
             for (size_t r = 1; r < num_rows_; ++r) {
-                CalculateVerterbiMatchProbability(r, c);
-                CalculateVerterbiInsertXProbability(r, c);
-                CalculateVerterbiInsertYProbability(r, c);
+                CalculateViterbiMatchProbability(r, c);
+                CalculateViterbiInsertXProbability(r, c);
+                CalculateViterbiInsertYProbability(r, c);
             }
         }
 
@@ -261,7 +261,7 @@ private:
         v_match_[0][0] = std::log10(1.0);
     }
 
-    void CalculateVerterbiMatchProbability(size_t r, size_t c) {
+    void CalculateViterbiMatchProbability(size_t r, size_t c) {
         double best_score = hmm_.GetTransitionMatrix().GetTransitionLogProbability(MATCH, MATCH) + v_match_[r-1][c-1];
         STATE best_previous_state = MATCH;
 
@@ -284,7 +284,7 @@ private:
         backtrack_match_[r][c] = best_previous_state;
     }
 
-    void CalculateVerterbiInsertXProbability(size_t r, size_t c) {
+    void CalculateViterbiInsertXProbability(size_t r, size_t c) {
         double best_score = hmm_.GetTransitionMatrix().GetTransitionLogProbability(MATCH, INSERT_X) + v_match_[r][c-1];
         STATE best_previous_state = MATCH;
 
@@ -298,7 +298,7 @@ private:
         backtrack_x_[r][c] = best_previous_state;
     }
 
-    void CalculateVerterbiInsertYProbability(size_t r, size_t c) {
+    void CalculateViterbiInsertYProbability(size_t r, size_t c) {
         double best_score = hmm_.GetTransitionMatrix().GetTransitionLogProbability(MATCH, INSERT_Y) + v_match_[r-1][c];
         STATE best_previous_state = MATCH;
 
@@ -313,79 +313,75 @@ private:
     }
 
     void Backtrack() {
-        enum class BestState : int {
-            V_MATCH = 0, V_X, V_Y
-        };
+        // Scan last column for best prob...
+        size_t best_col_index = num_cols_ - 1;
+        size_t best_row_index = 0;
+        double best_prob = v_match_[best_row_index][best_col_index];
+        STATE best_previous_state = MATCH;
+        STATE best_current_state = MATCH;
 
-        BestState best_state = BestState::V_MATCH;
-        size_t best_row_index = num_rows_ - 1;
-        size_t best_col_index = num_cols_ -1;
-
-        {
-            double best_prob = v_match_[best_row_index][best_col_index-1];
-            double v_x_prob = v_x_[best_row_index][num_cols_-1];
-            double v_y_prob = v_y_[best_row_index][num_cols_-1];
-
-            if (v_x_prob > best_prob) {
-                best_state = BestState::V_X;
-                best_prob = v_x_prob;
+        for (int r = 0; r < num_rows_; ++r) {
+            double match_prob = v_match_[r][best_col_index];
+            if (match_prob > best_prob) {
+                best_row_index = r;
+                best_previous_state = backtrack_match_[r][best_col_index];
+                best_current_state = MATCH;
+                best_prob = match_prob;
             }
 
-            if (v_y_prob > best_prob) {
-                best_state = BestState::V_Y;
-                best_prob = v_y_prob;
+            double x_prob = v_x_[r][best_col_index];
+            if (match_prob > best_prob) {
+                best_row_index = r;
+                best_previous_state = backtrack_x_[r][best_col_index];
+                best_current_state = INSERT_X;
+                best_prob = x_prob;
+            }
+
+            double y_prob = v_y_[r][best_col_index];
+            if (y_prob > best_prob) {
+                best_row_index = r;
+                best_previous_state = backtrack_y_[r][best_col_index];
+                best_current_state = INSERT_Y;
+                best_prob = y_prob;
             }
         }
 
-        // Actually do the backtracking now
         std::stack<STATE> state_stack;
 
-        while (!(best_col_index == 0 && best_row_index == 0)) {
+        // Now do actual backtracking
+        while (best_row_index != 0 && best_col_index != 0) {
+            state_stack.push(best_current_state);
             std::cout << "(" << best_row_index << ", " << best_col_index << ")" << std::endl;
 
-            switch(best_state) {
-                case BestState::V_MATCH :
-                    state_stack.push(MATCH);
+            switch (best_current_state) {
+                case MATCH:
+                    --best_row_index;
+                    --best_col_index;
                     break;
-                case BestState::V_X :
-                    state_stack.push(INSERT_X);
+                case INSERT_X:
+                    --best_col_index;
                     break;
-                case BestState::V_Y :
-                    state_stack.push(INSERT_Y);
+                case INSERT_Y:
+                    --best_row_index;
                     break;
                 default:
-                    throw std::logic_error("Unhandled state");
-
+                    throw std::logic_error("Best previous state impossible value");
             }
 
-            best_row_index = (best_state == BestState::V_MATCH || best_state == BestState::V_Y) ? best_row_index - 1 : best_row_index;
-            best_col_index = (best_state == BestState::V_MATCH || best_state == BestState::V_X) ? best_col_index - 1 : best_col_index;
+            best_current_state = best_previous_state;
 
-            if (best_row_index == 0 && best_col_index != 0) {
-                best_state = BestState::V_X;
-                continue;
-            }
-
-            if (best_col_index == 0 && best_row_index != 0) {
-                best_state = BestState::V_Y;
-                continue;
-            }
-
-            double v_match_prob = v_match_[best_row_index][best_col_index];
-            double v_x_prob = v_x_[best_row_index][best_col_index];
-            double v_y_prob = v_y_[best_row_index][best_col_index];
-
-            double best_prob = v_match_prob;
-            best_state = BestState::V_MATCH;
-
-            if (v_x_prob > best_prob) {
-                best_prob = v_x_prob;
-                best_state = BestState::V_X;
-            }
-
-            if (v_y_prob > best_prob) {
-                best_prob = v_y_prob;
-                best_state = BestState::V_Y;
+            switch (best_previous_state) {
+                case MATCH:
+                    best_previous_state = backtrack_match_[best_row_index][best_col_index];
+                    break;
+                case INSERT_X:
+                    best_previous_state = backtrack_x_[best_row_index][best_col_index];
+                    break;
+                case INSERT_Y:
+                    best_previous_state = backtrack_y_[best_row_index][best_col_index];
+                    break;
+                default:
+                    throw std::logic_error("Best previous state impossible value");
             }
         }
 
@@ -429,16 +425,22 @@ int main() {
 //        0.3, 0.05, 0.15, 0.5
 //    );
 
+//    PairHMM::EmissionMatrix emission_mat(
+//                                         0.997, 0.001, 0.001, 0.001,
+//                                         0.001, 0.997, 0.001, 0.001,
+//                                         0.001, 0.001, 0.997, 0.001,
+//                                         0.001, 0.001, 0.001, 0.997
+//                                         );
+
     PairHMM::EmissionMatrix emission_mat(
                                          1.0, 0.0, 0.0, 0.0,
                                          0.0, 1.0, 0.0, 0.0,
-                                         0.0, 0.0, 1.0, 0.0,
+                                         0.0, 0.0, 1.0 ,0.0,
                                          0.0, 0.0, 0.0, 1.0
                                          );
 
-
-    std::string seq1 = "CAAT";
-    std::string seq2 = "CAGT";
+    std::string seq1 = "CGTCAT";
+    std::string seq2 = "CAT";
 
     PairHMM::PairHMM hmm(std::move(emission_mat), std::move(trans_mat), seq1, seq2);
 
