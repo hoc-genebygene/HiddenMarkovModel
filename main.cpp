@@ -93,8 +93,6 @@ private:
     std::vector<T> vec_;
 };
 
-// Store the EmissionMatrix as a log matrix.
-// This allows multiplication to become addition, solving issues with precision from multiplying probabilities repeatedly.
 class EmissionMatrix {
 public:
     EmissionMatrix(double p_aa, double p_ac, double p_ag, double p_at,
@@ -139,7 +137,7 @@ public:
 
 
         auto SetTransitionProbability = [this](STATE before_state, STATE after_state, double probability) {
-            transition_probs_[before_state * 5 + after_state] = probability;
+            transition_probs_[before_state * 13 + after_state] = probability;
         };
 
         SetTransitionProbability(BEGINHIDDEN1, RX1, 1.0 - eta);
@@ -148,19 +146,16 @@ public:
         SetTransitionProbability(RX1, RX1, 1.0 - eta);
         SetTransitionProbability(RX1, BEGINHIDDEN2, eta);
 
-        SetTransitionProbability(BEGINHIDDEN2, RY1, 1.0-eta);
+        SetTransitionProbability(BEGINHIDDEN2, RY1, 1.0 - eta);
         SetTransitionProbability(BEGINHIDDEN2, BEGINHIDDEN3, eta);
 
         SetTransitionProbability(RY1, RY1, 1.0 - eta);
         SetTransitionProbability(RY1, BEGINHIDDEN3, eta);
 
-        SetTransitionProbability(BEGINHIDDEN3, MATCH, 1.0-2.0*delta-tau);
+        SetTransitionProbability(BEGINHIDDEN3, MATCH, 1.0 - 2.0 * delta - tau);
         SetTransitionProbability(BEGINHIDDEN3, INSERT_X, delta);
         SetTransitionProbability(BEGINHIDDEN3, INSERT_Y, delta);
         SetTransitionProbability(BEGINHIDDEN3, ENDHIDDEN1, tau);
-
-//        SetTransitionProbability(BEGINHIDDEN3, MATCH, 1.0 - tau);
-//        SetTransitionProbability(BEGINHIDDEN3, ENDHIDDEN1, tau);
 
         SetTransitionProbability(MATCH, MATCH, 1.0 - 2.0 * delta - tau);
         SetTransitionProbability(MATCH, INSERT_X, delta);
@@ -171,17 +166,9 @@ public:
         SetTransitionProbability(INSERT_X, INSERT_X, epsilon);
         SetTransitionProbability(INSERT_X, ENDHIDDEN1, tau);
 
-//        SetTransitionProbability(INSERT_X, MATCH, 1.0 - epsilon);
-//        SetTransitionProbability(INSERT_X, INSERT_X, epsilon);
-
-
         SetTransitionProbability(INSERT_Y, MATCH, 1.0 - epsilon - tau);
         SetTransitionProbability(INSERT_Y, INSERT_Y, epsilon);
         SetTransitionProbability(INSERT_Y, ENDHIDDEN1, tau);
-
-//        SetTransitionProbability(INSERT_Y, MATCH, 1.0 - epsilon);
-//        SetTransitionProbability(INSERT_Y, INSERT_Y, epsilon);
-
 
         SetTransitionProbability(ENDHIDDEN1, RX2, 1.0 - eta);
         SetTransitionProbability(ENDHIDDEN1, ENDHIDDEN2, eta);
@@ -197,7 +184,7 @@ public:
     }
 
     double GetTransitionProbability(STATE before_state, STATE after_state) const {
-        return transition_probs_[before_state * 5 + after_state];
+        return transition_probs_[before_state * 13 + after_state];
     }
 
 private:
@@ -236,54 +223,26 @@ public:
         hmm_(std::move(hmm)),
         num_rows_(hmm_.GetSeq2().size() + 1),
         num_cols_(hmm_.GetSeq1().size() + 1),
-        v_b1_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
-        v_x1_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
-        v_b2_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
-        v_y1_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
-        v_b3_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
         v_match_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
         v_x_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
         v_y_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
-        v_e1_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
-        v_x2_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
-        v_e2_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
-        v_y2_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
-        v_e3_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
-
-        backtrack_b1_(Matrix<STATE>(num_rows_, num_cols_, BEGINHIDDEN1)),
-        backtrack_x1_(Matrix<STATE>(num_rows_, num_cols_, BEGINHIDDEN1)),
-        backtrack_b2_(Matrix<STATE>(num_rows_, num_cols_, BEGINHIDDEN1)),
-        backtrack_y1_(Matrix<STATE>(num_rows_, num_cols_, BEGINHIDDEN2)),
-        backtrack_b3_(Matrix<STATE>(num_rows_, num_cols_, BEGINHIDDEN2)),
         backtrack_match_(Matrix<STATE>(num_rows_, num_cols_, MATCH)),
         backtrack_x_(Matrix<STATE>(num_rows_, num_cols_, BEGINHIDDEN3)),
-        backtrack_y_(Matrix<STATE>(num_rows_, num_cols_, BEGINHIDDEN3)),
-        backtrack_e1_(Matrix<STATE>(num_rows_, num_cols_, BEGINHIDDEN3)),
-        backtrack_x2_(Matrix<STATE>(num_rows_, num_cols_, ENDHIDDEN1)),
-        backtrack_e2_(Matrix<STATE>(num_rows_, num_cols_, ENDHIDDEN1)),
-        backtrack_y2_(Matrix<STATE>(num_rows_, num_cols_, ENDHIDDEN2)),
-        backtrack_e3_(Matrix<STATE>(num_rows_, num_cols_, ENDHIDDEN2))
+        backtrack_y_(Matrix<STATE>(num_rows_, num_cols_, BEGINHIDDEN3))
     {
         SetupInitialConditions();
     }
 
-    void Calculate() {
+    void CalculateViterbi() {
         // Traverse column by column
-        for (size_t c = 1; c < num_cols_; ++c) {
-            for (size_t r = 1; r < num_rows_; ++r) {
-//                CalculateBeginHidden1Probability(r, c);
-//                CalculateX1Probability(r, c);
-//                CalculateBeginHidden2Probability(r, c);
-//                CalculateY1Probability(r, c);
-//                CalculateBeginHidden3Probability(r, c);
+        for (size_t c = 0; c < num_cols_; ++c) {
+            for (size_t r = 0; r < num_rows_; ++r) {
+                if (r == 0 && c == 0)
+                    continue;
+
                 CalculateMatchProbability(r, c);
                 CalculateInsertXProbability(r, c);
                 CalculateInsertYProbability(r, c);
-//                CalculateEndHidden1Probability(r, c);
-//                CalculateX2Probability(r, c);
-//                CalculateEndHidden2Probability(r, c);
-//                CalculateY2Probability(r, c);
-//                CalculateEndHidden3Probability(r, c);
             }
         }
 
@@ -296,7 +255,8 @@ public:
         std::cout << "Match matrix: " << std::endl;
         for (size_t r = 0; r < num_rows_; ++r) {
             for (size_t c = 0; c < num_cols_; ++c) {
-                std::cout << std::pow(10, v_match_[r][c]) << " ";
+//                std::cout << std::pow(10, v_match_[r][c]) << " ";
+                std::cout << v_match_[r][c] << " ";
             }
             std::cout << std::endl;
         }
@@ -305,7 +265,8 @@ public:
         std::cout << "InsertX matrix: " << std::endl;
         for (size_t r = 0; r < num_rows_; ++r) {
             for (size_t c = 0; c < num_cols_; ++c) {
-                std::cout << std::pow(10, v_x_[r][c]) << " ";
+//                std::cout << std::pow(10, v_x_[r][c]) << " ";
+                std::cout << v_x_[r][c] << " ";
             }
             std::cout << std::endl;
         }
@@ -314,7 +275,8 @@ public:
         std::cout << "InsertY matrix: " << std::endl;
         for (size_t r = 0; r < num_rows_; ++r) {
             for (size_t c = 0; c < num_cols_; ++c) {
-                std::cout << std::pow(10, v_y_[r][c]) << " ";
+//                std::cout << std::pow(10, v_y_[r][c]) << " ";
+                std::cout << v_y_[r][c] << " ";
             }
             std::cout << std::endl;
         }
@@ -325,12 +287,6 @@ public:
 
 private:
     void SetupInitialConditions() {
-//        for (int r = 0; r < num_rows_; ++r)
-//            v_match_[r][0] = -2.0*std::log10(eta());
-//
-//        for (int c = 1; c < num_cols_; ++c)
-//            v_match_[0][c] = -2.0*std::log10(eta());
-
         v_match_[0][0] = -2.0*std::log10(eta());
     }
 
@@ -369,33 +325,25 @@ private:
     }
 
     double s(NUCLEOTIDE x_i, NUCLEOTIDE y_j) {
-//        return
-//                std::log10(hmm_.GetEmissionMatrix().GetEmissionProbability(x_i, y_j))
-//            -   std::log10(2.0 * hmm_.GetGapEmissionProbability())
-//            +   std::log10(1.0 - 2.0 * delta() - tau())
-//            -   std::log10(std::pow(1.0 - eta(), 2));
-
-        double a = std::log10(hmm_.GetEmissionMatrix().GetEmissionProbability(x_i, y_j));
-        double b = -std::log10(2.0 * hmm_.GetGapEmissionProbability());
-        double c = std::log10(1.0 - 2.0 * delta() - tau());
-        double d = -std::log10(std::pow(1.0 - eta(), 2));
-
-        return a - b + c - d;
-    }
-
-    void CalculateX1Probability(size_t r, size_t c) {
-    }
-
-    void CalculateBeginHidden2Probability(size_t r, size_t c) {
-    }
-
-    void CalculateY1Probability(size_t r, size_t c) {
-    }
-
-    void CalculateBeginHidden3Probability(size_t r, size_t c) {
+        return
+                std::log10(hmm_.GetEmissionMatrix().GetEmissionProbability(x_i, y_j))
+            -   std::log10(2.0 * hmm_.GetGapEmissionProbability())
+            +   std::log10(1.0 - 2.0 * delta() - tau())
+            -   std::log10(std::pow(1.0 - eta(), 2));
     }
 
     void CalculateMatchProbability(size_t r, size_t c) {
+        if (r == 0 || c == 0) {
+            v_match_[r][c] = std::log10(0.0);
+            if (r == 0) {
+                backtrack_match_[r][c] = INSERT_X;
+            } else {
+                backtrack_match_[r][c] = INSERT_Y;
+            }
+
+            return;
+        }
+
         NUCLEOTIDE x_i = ConvertCharToNucleotide(hmm_.GetSeq1()[c-1]);
         NUCLEOTIDE y_j = ConvertCharToNucleotide(hmm_.GetSeq2()[r-1]);
         double substitution_score = s(x_i, y_j);
@@ -415,11 +363,17 @@ private:
             best_previous_state = INSERT_Y;
         }
 
-        v_match_[r][c] = best_score + substitution_score;
+        v_match_[r][c] = substitution_score + best_score;
         backtrack_match_[r][c] = best_previous_state;
     }
 
     void CalculateInsertXProbability(size_t r, size_t c) {
+        if (c == 0) {
+            v_x_[r][c] = std::log10(0.0);
+            backtrack_x_[r][c] = INSERT_Y;
+            return;
+        }
+
         double best_score = v_match_[r][c-1] - d();
 
         STATE best_previous_state = MATCH;
@@ -435,6 +389,11 @@ private:
     }
 
     void CalculateInsertYProbability(size_t r, size_t c) {
+        if (r == 0) {
+            v_y_[r][c] = std::log10(0.0);
+            backtrack_y_[r][c] = INSERT_X;
+            return;
+        }
         double best_score = v_match_[r-1][c] - d();
         STATE best_previous_state = MATCH;
 
@@ -448,30 +407,15 @@ private:
         backtrack_y_[r][c] = best_previous_state;
     }
 
-    void CalculateEndHidden1Probability(size_t r, size_t c) {
-    }
-
-    void CalculateX2Probability(size_t r, size_t c) {
-    }
-
-    void CalculateEndHidden2Probability(size_t r, size_t c) {
-    }
-
-    void CalculateY2Probability(size_t r, size_t c) {
-    }
-
-    void CalculateEndHidden3Probability(size_t r, size_t c) {
-    }
-
     void Backtrack() {
         // Scan last column for best prob...
         size_t best_col_index = num_cols_ - 1;
-        size_t best_row_index = num_rows_-1;
+        size_t best_row_index = num_rows_ - 1;
         double best_prob = v_match_[best_row_index][best_col_index];
         STATE best_previous_state = MATCH;
         STATE best_current_state = MATCH;
 
-        for (int r = num_rows_-1; r < num_rows_; ++r) {
+        for (int r = num_rows_ - 1; r < num_rows_; ++r) {
             double match_prob = v_match_[r][best_col_index];
             if (match_prob > best_prob) {
                 best_row_index = r;
@@ -541,7 +485,7 @@ private:
             }
         }
 
-        std::cout << "\n(" << best_row_index << ", " << best_col_index << ")" << std::endl;
+//        std::cout << "\n(" << best_row_index << ", " << best_col_index << ")" << std::endl;
 
         // Print the path
         while (!state_stack.empty()) {
@@ -558,33 +502,130 @@ private:
     size_t num_rows_;
     size_t num_cols_;
 
-    Matrix<double> v_b1_;
-    Matrix<double> v_x1_;
-    Matrix<double> v_b2_;
-    Matrix<double> v_y1_;
-    Matrix<double> v_b3_;
     Matrix<double> v_match_;
     Matrix<double> v_x_;
     Matrix<double> v_y_;
-    Matrix<double> v_e1_;
-    Matrix<double> v_x2_;
-    Matrix<double> v_e2_;
-    Matrix<double> v_y2_;
-    Matrix<double> v_e3_;
 
-    Matrix<STATE> backtrack_b1_;
-    Matrix<STATE> backtrack_x1_;
-    Matrix<STATE> backtrack_b2_;
-    Matrix<STATE> backtrack_y1_;
-    Matrix<STATE> backtrack_b3_;
     Matrix<STATE> backtrack_match_;
     Matrix<STATE> backtrack_x_;
     Matrix<STATE> backtrack_y_;
-    Matrix<STATE> backtrack_e1_;
-    Matrix<STATE> backtrack_x2_;
-    Matrix<STATE> backtrack_e2_;
-    Matrix<STATE> backtrack_y2_;
-    Matrix<STATE> backtrack_e3_;
+};
+
+class ForwardCalculator {
+public:
+    ForwardCalculator(PairHMM hmm) :
+        hmm_(std::move(hmm)),
+        num_rows_(hmm_.GetSeq2().size() + 1),
+        num_cols_(hmm_.GetSeq1().size() + 1),
+        f_match_(Matrix<double>(num_rows_, num_cols_, 0.0)),
+        f_x_(Matrix<double>(num_rows_, num_cols_, 0.0)),
+        f_y_(Matrix<double>(num_rows_, num_cols_, 0.0))
+    {
+        SetupInitialConditions();
+    }
+
+    void Calculate() {
+        for (size_t c = 0; c < num_cols_; ++c) {
+            for (size_t r = 0; r < num_rows_; ++r) {
+                if (r == 0 && c == 0) {
+                    continue;
+                }
+
+                CalculateForwardMatch(r, c);
+                CalculateForwardX(r, c);
+                CalculateForwardY(r, c);
+            }
+        }
+
+        std::cout << "Match matrix: " << std::endl;
+        for (size_t r = 0; r < num_rows_; ++r) {
+            for (size_t c = 0; c < num_cols_; ++c) {
+                //                std::cout << std::pow(10, v_match_[r][c]) << " ";
+                std::cout << f_match_[r][c] << " ";
+            }
+            std::cout << std::endl;
+        }
+        std::cout << std::endl;
+
+        std::cout << "InsertX matrix: " << std::endl;
+        for (size_t r = 0; r < num_rows_; ++r) {
+            for (size_t c = 0; c < num_cols_; ++c) {
+                //                std::cout << std::pow(10, v_x_[r][c]) << " ";
+                std::cout << f_x_[r][c] << " ";
+            }
+            std::cout << std::endl;
+        }
+        std::cout << std::endl;
+
+        std::cout << "InsertY matrix: " << std::endl;
+        for (size_t r = 0; r < num_rows_; ++r) {
+            for (size_t c = 0; c < num_cols_; ++c) {
+                //                std::cout << std::pow(10, v_y_[r][c]) << " ";
+                std::cout << f_y_[r][c] << " ";
+            }
+            std::cout << std::endl;
+        }
+        std::cout << std::endl;
+    }
+
+    void CalculateForwardMatch(size_t r, size_t c) {
+        if (r == 0 || c == 0) {
+            f_match_[r][c] = 0.0;
+            return;
+        }
+
+        double score =
+            hmm_.GetEmissionMatrix().GetEmissionProbability(ConvertCharToNucleotide(hmm_.GetSeq1()[c-1]), ConvertCharToNucleotide(hmm_.GetSeq1()[r-1]))
+            * (
+                hmm_.GetTransitionMatrix().GetTransitionProbability(MATCH, MATCH) * f_match_[r-1][c-1]
+            +   hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_X, MATCH) * f_x_[r-1][c-1]
+            +   hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_Y, MATCH) * f_y_[r-1][c-1]
+        );
+
+        std::cout << r << " " << c << " " << f_match_[r-1][c-1] << " " << f_x_[r-1][c-1] << " " << f_y_[r-1][c-1] << " " << score << std::endl;
+        f_match_[r][c] = score;
+    }
+
+    void CalculateForwardX(size_t r, size_t c) {
+        if (c == 0) {
+            f_x_[r][c] = 0.0;
+            return;
+        }
+        f_x_[r][c] =
+            hmm_.GetGapEmissionProbability()
+            * (
+                hmm_.GetTransitionMatrix().GetTransitionProbability(MATCH, INSERT_X) * f_match_[r][c-1]
+            +   hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_X, INSERT_X) * f_x_[r][c-1]
+        );
+    }
+
+    void CalculateForwardY(size_t r, size_t c) {
+        if (r == 0) {
+            f_y_[r][c] = 0.0;
+            return;
+        }
+        f_y_[r][c] =
+        hmm_.GetGapEmissionProbability()
+            * (
+                hmm_.GetTransitionMatrix().GetTransitionProbability(MATCH, INSERT_Y) * f_match_[r-1][c]
+            +   hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_Y, INSERT_Y) * f_y_[r-1][c]
+        );
+    }
+
+private:
+    void SetupInitialConditions() {
+        f_match_[0][0] = 1.0;
+    }
+
+    PairHMM hmm_;
+
+    size_t num_rows_;
+    size_t num_cols_;
+
+    Matrix<double> f_match_;
+    Matrix<double> f_x_;
+    Matrix<double> f_y_;
+
 };
 
 } // namespace PairHMM
@@ -593,8 +634,8 @@ int main() {
     PairHMM::TransitionMatrix trans_mat(
         0.2,    // delta
         0.1,    // epsilon
-        0.001,   // eta
-        0.001     // tau
+        0.0,    // eta (probability to start aligning)
+        0.1     // tau (probability to end aligning)
     );
 
 //    // Single insertion and deletion only!
@@ -606,19 +647,19 @@ int main() {
 //                                        0.0, 0.0, 0.0, 0.0, 1.0  // H
 //                                        );0
 
-//    PairHMM::EmissionMatrix emission_mat(
-//        0.5, 0.15, 0.05, 0.3,
-//        0.15, 0.5, 0.3, 0.05,
-//        0.05, 0.3, 0.5, 0.15,
-//        0.3, 0.05, 0.15, 0.5
-//    );
-
     PairHMM::EmissionMatrix emission_mat(
-                                         0.997, 0.001, 0.001, 0.001,
-                                         0.001, 0.997, 0.001, 0.001,
-                                         0.001, 0.001, 0.997, 0.001,
-                                         0.001, 0.001, 0.001, 0.997
-                                         );
+        0.5, 0.15, 0.05, 0.3,
+        0.15, 0.5, 0.3, 0.05,
+        0.05, 0.3, 0.5, 0.15,
+        0.3, 0.05, 0.15, 0.5
+    );
+
+//    PairHMM::EmissionMatrix emission_mat(
+//                                         0.997, 0.001, 0.001, 0.001,
+//                                         0.001, 0.997, 0.001, 0.001,
+//                                         0.001, 0.001, 0.997, 0.001,
+//                                         0.001, 0.001, 0.001, 0.997
+//                                         );
 
 //    PairHMM::EmissionMatrix emission_mat(
 //                                         1.0, 0.0, 0.0, 0.0,
@@ -627,11 +668,14 @@ int main() {
 //                                         0.0, 0.0, 0.0, 1.0
 //                                         );
 
-    std::string seq1 = "ACAT";
+    std::string seq1 = "CATA";
     std::string seq2 = "CAT";
 
     PairHMM::PairHMM hmm(std::move(emission_mat), std::move(trans_mat), seq1, seq2);
 
-    PairHMM::ViterbiPathCalculator ver_path_calc(hmm);
-    ver_path_calc.Calculate();
+//    PairHMM::ViterbiPathCalculator ver_path_calc(hmm);
+//    ver_path_calc.CalculateViterbi();
+
+    PairHMM::ForwardCalculator for_calc(hmm);
+    for_calc.Calculate();
 }
