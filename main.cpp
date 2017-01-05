@@ -2,6 +2,7 @@
 #include <cmath>
 #include <iostream>
 #include <iomanip>
+#include <random>
 #include <stack>
 #include <vector>
 
@@ -59,6 +60,31 @@ NUCLEOTIDE ConvertCharToNucleotide(char c) {
         return T;
 
     throw std::runtime_error("Unrecognized nucleotide");
+}
+
+std::string GenerateRandomNucleotideString(size_t length) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 3);
+
+    std::vector<char> vec(length);
+
+    std::generate_n(vec.begin(), length, [&dis, &gen]() {
+        switch(dis(gen)) {
+            case 0:
+                return 'A';
+            case 1:
+                return 'C';
+            case 2:
+                return 'G';
+            case 3:
+                return 'T';
+            default:
+                throw std::logic_error("Random number generator too large");
+        }
+    });
+
+    return std::string(vec.begin(), vec.end());
 }
 
 } // anonymous namespace
@@ -226,9 +252,9 @@ public:
         v_match_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
         v_x_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
         v_y_(Matrix<double>(num_rows_, num_cols_, std::log10(0.0))),
-        backtrack_match_(Matrix<STATE>(num_rows_, num_cols_, MATCH)),
-        backtrack_x_(Matrix<STATE>(num_rows_, num_cols_, BEGINHIDDEN3)),
-        backtrack_y_(Matrix<STATE>(num_rows_, num_cols_, BEGINHIDDEN3))
+        backtrack_match_(Matrix<STATE>(num_rows_, num_cols_, INSERT_X)),
+        backtrack_x_(Matrix<STATE>(num_rows_, num_cols_, INSERT_X)),
+        backtrack_y_(Matrix<STATE>(num_rows_, num_cols_, INSERT_X))
     {
         SetupInitialConditions();
     }
@@ -246,41 +272,41 @@ public:
             }
         }
 
-        std::cout
-//            << std::setiosflags(std::ios::scientific)
-            << std::setprecision(3)
-//            << std::setw(2)
-        ;
-
-        std::cout << "Match matrix: " << std::endl;
-        for (size_t r = 0; r < num_rows_; ++r) {
-            for (size_t c = 0; c < num_cols_; ++c) {
-                std::cout << std::pow(10, v_match_[r][c]) << " ";
-//                std::cout << v_match_[r][c] << " ";
-            }
-            std::cout << std::endl;
-        }
-        std::cout << std::endl;
-
-        std::cout << "InsertX matrix: " << std::endl;
-        for (size_t r = 0; r < num_rows_; ++r) {
-            for (size_t c = 0; c < num_cols_; ++c) {
-                std::cout << std::pow(10, v_x_[r][c]) << " ";
-//                std::cout << v_x_[r][c] << " ";
-            }
-            std::cout << std::endl;
-        }
-        std::cout << std::endl;
-
-        std::cout << "InsertY matrix: " << std::endl;
-        for (size_t r = 0; r < num_rows_; ++r) {
-            for (size_t c = 0; c < num_cols_; ++c) {
-                std::cout << std::pow(10, v_y_[r][c]) << " ";
-//                std::cout << v_y_[r][c] << " ";
-            }
-            std::cout << std::endl;
-        }
-        std::cout << std::endl;
+//        std::cout
+////            << std::setiosflags(std::ios::scientific)
+//            << std::setprecision(3)
+////            << std::setw(2)
+//        ;
+//
+//        std::cout << "Match matrix: " << std::endl;
+//        for (size_t r = 0; r < num_rows_; ++r) {
+//            for (size_t c = 0; c < num_cols_; ++c) {
+//                std::cout << std::pow(10, v_match_[r][c]) << " ";
+////                std::cout << v_match_[r][c] << " ";
+//            }
+//            std::cout << std::endl;
+//        }
+//        std::cout << std::endl;
+//
+//        std::cout << "InsertX matrix: " << std::endl;
+//        for (size_t r = 0; r < num_rows_; ++r) {
+//            for (size_t c = 0; c < num_cols_; ++c) {
+//                std::cout << std::pow(10, v_x_[r][c]) << " ";
+////                std::cout << v_x_[r][c] << " ";
+//            }
+//            std::cout << std::endl;
+//        }
+//        std::cout << std::endl;
+//
+//        std::cout << "InsertY matrix: " << std::endl;
+//        for (size_t r = 0; r < num_rows_; ++r) {
+//            for (size_t c = 0; c < num_cols_; ++c) {
+//                std::cout << std::pow(10, v_y_[r][c]) << " ";
+////                std::cout << v_y_[r][c] << " ";
+//            }
+//            std::cout << std::endl;
+//        }
+//        std::cout << std::endl;
 
         Backtrack();
     }
@@ -375,17 +401,16 @@ private:
             return;
         }
 
-        double best_score = v_match_[r][c-1] + std::log10(delta());
+        double best_score = v_x_[r][c-1] + std::log10(epsilon());
+        STATE best_previous_state = INSERT_X;
 
-        STATE best_previous_state = MATCH;
-
-        double insert_x_score = v_x_[r][c-1] + std::log10(epsilon());
-        if (insert_x_score > best_score) {
-            best_score = insert_x_score;
-            best_previous_state = INSERT_X;
+        double match_score = v_match_[r][c-1] + std::log10(delta());
+        if (match_score > best_score) {
+            best_score = match_score;
+            best_previous_state = MATCH;
         }
 
-        v_x_[r][c] = best_score;
+        v_x_[r][c] = best_score + std::log10(hmm_.GetGapEmissionProbability());
         backtrack_x_[r][c] = best_previous_state;
     }
 
@@ -395,66 +420,76 @@ private:
             backtrack_y_[r][c] = INSERT_X;
             return;
         }
-        double best_score = v_match_[r-1][c] + std::log10(delta());
-        STATE best_previous_state = MATCH;
+        double best_score = v_y_[r-1][c] + std::log10(epsilon());
+        STATE best_previous_state = INSERT_Y;
 
-        double insert_y_score = v_y_[r-1][c] + std::log10(epsilon());
-        if (insert_y_score > best_score) {
-            best_score = insert_y_score;
-            best_previous_state = INSERT_Y;
+        double match_score = v_match_[r-1][c] + std::log10(delta());
+        if (match_score > best_score) {
+            best_score = match_score;
+            best_previous_state = MATCH;
         }
 
-        v_y_[r][c] = best_score;
+        v_y_[r][c] = best_score + std::log10(hmm_.GetGapEmissionProbability());
         backtrack_y_[r][c] = best_previous_state;
     }
 
     void Backtrack() {
         // Scan last column for best prob...
-        size_t best_col_index = num_cols_ - 1;
         size_t best_row_index = 0;
-        double best_prob = v_match_[best_row_index][best_col_index];
-        STATE best_previous_state = MATCH;
+        size_t best_col_index = num_cols_;
+        double best_prob = std::log10(0.0);
         STATE best_current_state = MATCH;
-
-        for (int r = 0; r < num_rows_; ++r) {
-            double match_prob = v_match_[r][best_col_index];
-            if (match_prob > best_prob) {
-                best_row_index = r;
-                best_previous_state = backtrack_match_[r][best_col_index];
-                best_current_state = MATCH;
-                best_prob = match_prob;
-            }
-
-            double x_prob = v_x_[r][best_col_index];
-            if (x_prob > best_prob) {
-                best_row_index = r;
-                best_previous_state = backtrack_x_[r][best_col_index];
-                best_current_state = INSERT_X;
-                best_prob = x_prob;
-            }
-
-            double y_prob = v_y_[r][best_col_index];
-            if (y_prob > best_prob) {
-                best_row_index = r;
-                best_previous_state = backtrack_y_[r][best_col_index];
-                best_current_state = INSERT_Y;
-                best_prob = y_prob;
-            }
-        }
+        STATE best_previous_state = MATCH;
 
         std::stack<STATE> state_stack;
 
-        //state_stack.push(best_current_state);
+        while (best_prob == std::log10(0.0)) {
+            --best_col_index;
+            best_row_index = num_rows_ - 1;
+            best_prob = v_match_[best_row_index][best_col_index];
+            best_current_state = MATCH;
+            best_previous_state = backtrack_match_[best_row_index][best_col_index];
+
+            for (int r = 0; r < num_rows_; ++r) {
+                double match_prob = v_match_[r][best_col_index];
+                if (match_prob > best_prob) {
+                    best_row_index = r;
+                    best_previous_state = backtrack_match_[r][best_col_index];
+                    best_current_state = MATCH;
+                    best_prob = match_prob;
+                }
+
+                double x_prob = v_x_[r][best_col_index];
+                if (x_prob > best_prob) {
+                    best_row_index = r;
+                    best_previous_state = backtrack_x_[r][best_col_index];
+                    best_current_state = INSERT_X;
+                    best_prob = x_prob;
+                }
+
+                double y_prob = v_y_[r][best_col_index];
+                if (y_prob > best_prob) {
+                    best_row_index = r;
+                    best_previous_state = backtrack_y_[r][best_col_index];
+                    best_current_state = INSERT_Y;
+                    best_prob = y_prob;
+                }
+            }
+
+            if (best_prob == std::log(0.0)) {
+                state_stack.push(INSERT_X);
+            }
+        }
 
         // Now do actual backtracking
-        while (best_row_index != 0 && best_col_index != 0) {
+        while (best_row_index != 0 || best_col_index != 0) {
 
             // Best current state onto stack
-            state_stack.push(best_previous_state);
-            std::cout << "(" << best_row_index << ", " << best_col_index << ")" << std::endl;
+            state_stack.push(best_current_state);
+            //std::cout << "(" << best_row_index << ", " << best_col_index << ")" << std::endl;
 
-            // Update indicies to previous state
-            switch (best_previous_state) {
+            // Update indicies based on current best state
+            switch (best_current_state) {
                 case MATCH:
                     --best_row_index;
                     --best_col_index;
@@ -488,7 +523,7 @@ private:
             }
         }
 
-//        std::cout << "\n(" << best_row_index << ", " << best_col_index << ")" << std::endl;
+        //std::cout << "\n(" << best_row_index << ", " << best_col_index << ")" << std::endl;
 
         // Print the path
         while (!state_stack.empty()) {
@@ -578,7 +613,7 @@ public:
         }
 
         double score =
-            hmm_.GetEmissionMatrix().GetEmissionProbability(ConvertCharToNucleotide(hmm_.GetSeq1()[c-1]), ConvertCharToNucleotide(hmm_.GetSeq1()[r-1]))
+            hmm_.GetEmissionMatrix().GetEmissionProbability(ConvertCharToNucleotide(hmm_.GetSeq1()[c-1]), ConvertCharToNucleotide(hmm_.GetSeq2()[r-1]))
             * (
                 hmm_.GetTransitionMatrix().GetTransitionProbability(MATCH, MATCH) * f_match_[r-1][c-1] * (1.0 - 2.0 * delta() - tau())
             +   hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_X, MATCH) * f_x_[r-1][c-1] * (1.0 - epsilon() - tau())
@@ -656,8 +691,8 @@ private:
 
 int main() {
     PairHMM::TransitionMatrix trans_mat(
-        0.2,    // delta
-        0.1,    // epsilon
+        0.1,    // delta
+        0.2,    // epsilon
         0.0,    // eta (probability to start aligning)
         0.1     // tau (probability to end aligning)
     );
@@ -671,12 +706,12 @@ int main() {
 //                                        0.0, 0.0, 0.0, 0.0, 1.0  // H
 //                                        );0
 
-    PairHMM::EmissionMatrix emission_mat(
-        0.5, 0.15, 0.05, 0.3,
-        0.15, 0.5, 0.3, 0.05,
-        0.05, 0.3, 0.5, 0.15,
-        0.3, 0.05, 0.15, 0.5
-    );
+//    PairHMM::EmissionMatrix emission_mat(
+//        0.5, 0.15, 0.05, 0.3,
+//        0.15, 0.5, 0.3, 0.05,
+//        0.05, 0.3, 0.5, 0.15,
+//        0.3, 0.05, 0.15, 0.5
+//    );
 
 //    PairHMM::EmissionMatrix emission_mat(
 //                                         0.997, 0.001, 0.001, 0.001,
@@ -685,15 +720,21 @@ int main() {
 //                                         0.001, 0.001, 0.001, 0.997
 //                                         );
 
-//    PairHMM::EmissionMatrix emission_mat(
-//                                         1.0, 0.0, 0.0, 0.0,
-//                                         0.0, 1.0, 0.0, 0.0,
-//                                         0.0, 0.0, 1.0 ,0.0,
-//                                         0.0, 0.0, 0.0, 1.0
-//                                         );
+    PairHMM::EmissionMatrix emission_mat(
+                                         1.0, 0.0, 0.0, 0.0,
+                                         0.0, 1.0, 0.0, 0.0,
+                                         0.0, 0.0, 1.0 ,0.0,
+                                         0.0, 0.0, 0.0, 1.0
+                                         );
 
-    std::string seq1 = "CATA";
-    std::string seq2 = "CAT";
+//    std::string seq1 = "ACAT";
+//    std::string seq2 = "CAT";
+
+    std::string seq1 = PairHMM::GenerateRandomNucleotideString(300000000);
+    std::string seq2 = PairHMM::GenerateRandomNucleotideString(100);
+
+//    std::cout << "seq1: " << seq1 << std::endl;
+//    std::cout << "seq2: " << seq2 << std::endl;
 
     PairHMM::PairHMM hmm(std::move(emission_mat), std::move(trans_mat), seq1, seq2);
 
