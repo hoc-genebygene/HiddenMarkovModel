@@ -577,12 +577,11 @@ public:
         double score =
             hmm_.GetEmissionMatrix().GetEmissionProbability(ConvertCharToNucleotide(hmm_.GetSeq1()[c-1]), ConvertCharToNucleotide(hmm_.GetSeq1()[r-1]))
             * (
-                hmm_.GetTransitionMatrix().GetTransitionProbability(MATCH, MATCH) * f_match_[r-1][c-1]
-            +   hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_X, MATCH) * f_x_[r-1][c-1]
-            +   hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_Y, MATCH) * f_y_[r-1][c-1]
+                hmm_.GetTransitionMatrix().GetTransitionProbability(MATCH, MATCH) * f_match_[r-1][c-1] * (1.0 - 2.0 * delta() - tau())
+            +   hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_X, MATCH) * f_x_[r-1][c-1] * (1.0 - epsilon() - tau())
+            +   hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_Y, MATCH) * f_y_[r-1][c-1] * (1.0 - epsilon() - tau())
         );
 
-        std::cout << r << " " << c << " " << f_match_[r-1][c-1] << " " << f_x_[r-1][c-1] << " " << f_y_[r-1][c-1] << " " << score << std::endl;
         f_match_[r][c] = score;
     }
 
@@ -594,8 +593,8 @@ public:
         f_x_[r][c] =
             hmm_.GetGapEmissionProbability()
             * (
-                hmm_.GetTransitionMatrix().GetTransitionProbability(MATCH, INSERT_X) * f_match_[r][c-1]
-            +   hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_X, INSERT_X) * f_x_[r][c-1]
+                hmm_.GetTransitionMatrix().GetTransitionProbability(MATCH, INSERT_X) * f_match_[r][c-1] * delta()
+            +   hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_X, INSERT_X) * f_x_[r][c-1] * epsilon()
         );
     }
 
@@ -607,15 +606,37 @@ public:
         f_y_[r][c] =
         hmm_.GetGapEmissionProbability()
             * (
-                hmm_.GetTransitionMatrix().GetTransitionProbability(MATCH, INSERT_Y) * f_match_[r-1][c]
-            +   hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_Y, INSERT_Y) * f_y_[r-1][c]
+                hmm_.GetTransitionMatrix().GetTransitionProbability(MATCH, INSERT_Y) * f_match_[r-1][c] * delta()
+            +   hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_Y, INSERT_Y) * f_y_[r-1][c] * epsilon()
         );
+    }
+
+    double GetMostLikelyAlignmentProbability() {
+        return tau() * (f_match_[num_rows_-1][num_cols_-1] + f_x_[num_rows_-1][num_cols_-1] + f_y_[num_rows_-1][num_cols_-1]);
     }
 
 private:
     void SetupInitialConditions() {
         f_match_[0][0] = 1.0;
     }
+
+    double delta() {
+        return hmm_.GetTransitionMatrix().GetTransitionProbability(MATCH, INSERT_X);
+    }
+
+    double epsilon() {
+        return hmm_.GetTransitionMatrix().GetTransitionProbability(INSERT_X, INSERT_X);
+    }
+
+    double tau() {
+        return hmm_.GetTransitionMatrix().GetTransitionProbability(MATCH, ENDHIDDEN1);
+    }
+
+    double eta() {
+        return hmm_.GetTransitionMatrix().GetTransitionProbability(BEGINHIDDEN1, BEGINHIDDEN2);
+    }
+
+private:
 
     PairHMM hmm_;
 
@@ -673,9 +694,10 @@ int main() {
 
     PairHMM::PairHMM hmm(std::move(emission_mat), std::move(trans_mat), seq1, seq2);
 
-//    PairHMM::ViterbiPathCalculator ver_path_calc(hmm);
-//    ver_path_calc.CalculateViterbi();
+    PairHMM::ViterbiPathCalculator ver_path_calc(hmm);
+    ver_path_calc.CalculateViterbi();
 
     PairHMM::ForwardCalculator for_calc(hmm);
     for_calc.Calculate();
+    std::cout << "Most likely alignment probability: " << for_calc.GetMostLikelyAlignmentProbability() << std::endl;
 }
